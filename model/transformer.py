@@ -163,15 +163,16 @@ class DDiTBlock(nn.Module):
         x = modulate_fused(self.norm1(x), shift_msa, scale_msa)
         # dtype0 = x.dtype
 
-        qkv = self.attn_qkv(x)
-        qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
-        with torch.cuda.amp.autocast(enabled=False):
-            cos, sin = rotary_cos_sin
-            qkv = rotary.apply_rotary_pos_emb(
-                qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
-            )
+        #####
+        # TODO: re-enable on server
+        # qkv = self.attn_qkv(x)
+        # qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
+        # with torch.cuda.amp.autocast(enabled=False):
+        #     cos, sin = rotary_cos_sin
+        #     qkv = rotary.apply_rotary_pos_emb(
+        #         qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
+        #     )
 
-        # # TODO: re-enable on server
         # qkv = rearrange(qkv, 'b s ... -> (b s) ...')
         # if seqlens is None:
         #     cu_seqlens = torch.arange(
@@ -184,22 +185,49 @@ class DDiTBlock(nn.Module):
         #     qkv, cu_seqlens, seq_len, 0., causal=False)
 
 
-        # NOTE: temporary torch replacemenbt
-        # Split into q, k, v; each of shape (b, seq_len, n_heads, head_dim)
-        q, k, v = qkv.unbind(dim=2)
+        #####
+        # NOTE: temporary torch replacement
+        # qkv = self.attn_qkv(x)
+        # qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
+        # with torch.cuda.amp.autocast(enabled=False):
+        #     cos, sin = rotary_cos_sin
+        #     qkv = rotary.apply_rotary_pos_emb(
+        #         qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
+        #     )
+        #
+        # # Split into q, k, v; each of shape (b, seq_len, n_heads, head_dim)
+        # q, k, v = qkv.unbind(dim=2)
+        #
+        # # Rearrange to match torch's expected shape: (batch, n_heads, seq_len, head_dim)
+        # q = q.permute(0, 2, 1, 3)
+        # k = k.permute(0, 2, 1, 3)
+        # v = v.permute(0, 2, 1, 3)
+        #
+        # # Compute scaled dot-product attention (no dropout, non-causal)
+        # x = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=0.0, is_causal=False)
+        #
+        # # Rearrange back to (batch, seq_len, n_heads, head_dim)
+        # x = x.permute(0, 2, 1, 3)
 
-        # Rearrange to match torch's expected shape: (batch, n_heads, seq_len, head_dim)
-        q = q.permute(0, 2, 1, 3)
-        k = k.permute(0, 2, 1, 3)
-        v = v.permute(0, 2, 1, 3)
+        #####
+        # NOTE: Flow matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
+        with torch.amp.autocast("cuda", enabled=False):
+            cos, sin = rotary_cos_sin
+            original_dtype = q.dtype
 
-        # Compute scaled dot-product attention (no dropout, non-causal)
-        attn_output = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=0.0, is_causal=False)
+            q = rotary.apply_rotary_emb_torch(
+                x=q.float(), cos=cos.float(), sin=sin.float()
+            ).to(original_dtype)
+            k = rotary.apply_rotary_emb_torch(
+                x=k.float(), cos=cos.float(), sin=sin.float()
+            ).to(original_dtype)
 
-        # Rearrange back to (batch, seq_len, n_heads, head_dim)
-        attn_output = attn_output.permute(0, 2, 1, 3)
+        q, k, v = (item.transpose(1, 2) for item in (q, k, v))
 
-        
+        x = F.scaled_dot_product_attention(query=q, key=k, value=v)
+
+
+        #####
         x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
 
         x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
