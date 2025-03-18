@@ -5,7 +5,7 @@ import numpy as np
 import math
 
 from einops import rearrange
-from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+# from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
 # from flash_attn.ops.fused_dense import FusedMLP, FusedDense
 from huggingface_hub import PyTorchModelHubMixin
 from omegaconf import OmegaConf
@@ -117,6 +117,7 @@ class LabelEmbedder(nn.Module):
 
 class DDiTBlock(nn.Module):
 
+    # NOTE: use cond_dim!
     def __init__(self, dim, n_heads, cond_dim, mlp_ratio=4, dropout=0.1):
         super().__init__()
         self.n_heads = n_heads
@@ -169,16 +170,35 @@ class DDiTBlock(nn.Module):
             qkv = rotary.apply_rotary_pos_emb(
                 qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
             )
-        qkv = rearrange(qkv, 'b s ... -> (b s) ...')
-        if seqlens is None:
-            cu_seqlens = torch.arange(
-                0, (batch_size + 1) * seq_len, step=seq_len,
-                dtype=torch.int32, device=qkv.device
-            )
-        else:
-            cu_seqlens = seqlens.cumsum(-1)
-        x = flash_attn_varlen_qkvpacked_func(
-            qkv, cu_seqlens, seq_len, 0., causal=False)
+
+        # # TODO: re-enable on server
+        # qkv = rearrange(qkv, 'b s ... -> (b s) ...')
+        # if seqlens is None:
+        #     cu_seqlens = torch.arange(
+        #         0, (batch_size + 1) * seq_len, step=seq_len,
+        #         dtype=torch.int32, device=qkv.device
+        #     )
+        # else:
+        #     cu_seqlens = seqlens.cumsum(-1)
+        # x = flash_attn_varlen_qkvpacked_func(
+        #     qkv, cu_seqlens, seq_len, 0., causal=False)
+
+
+        # NOTE: temporary torch replacemenbt
+        # Split into q, k, v; each of shape (b, seq_len, n_heads, head_dim)
+        q, k, v = qkv.unbind(dim=2)
+
+        # Rearrange to match torch's expected shape: (batch, n_heads, seq_len, head_dim)
+        q = q.permute(0, 2, 1, 3)
+        k = k.permute(0, 2, 1, 3)
+        v = v.permute(0, 2, 1, 3)
+
+        # Compute scaled dot-product attention (no dropout, non-causal)
+        attn_output = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=0.0, is_causal=False)
+
+        # Rearrange back to (batch, seq_len, n_heads, head_dim)
+        attn_output = attn_output.permute(0, 2, 1, 3)
+
         
         x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
 
