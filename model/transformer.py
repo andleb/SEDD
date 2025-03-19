@@ -137,7 +137,7 @@ class DDiTBlock(nn.Module):
 
         self.dropout = dropout
         
-
+        # TODO: replace with cross-attention
         self.adaLN_modulation = nn.Linear(cond_dim, 6 * dim, bias=True)
         self.adaLN_modulation.weight.data.zero_()
         self.adaLN_modulation.bias.data.zero_()
@@ -308,6 +308,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
     def forward(self, indices, sigma):
 
         x = self.vocab_embed(indices)
+        # TODO: this needs to be expanded to incorporate the full conditioning
         c = F.silu(self.sigma_map(sigma))
 
         rotary_cos_sin = self.rotary_emb(x)

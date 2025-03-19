@@ -32,7 +32,7 @@ def main(cfg):
         cfg.work_dir = work_dir
         cfg.wandb_name = os.path.basename(os.path.normpath(work_dir))
 
-	# Run the training pipeline
+    # Run the training pipeline
     port = int(np.random.randint(10000, 20000))
     logger = utils.get_logger(os.path.join(work_dir, "logs"))
 

@@ -129,6 +129,7 @@ def _run(rank, world_size, cfg):
     eval_iter = iter(eval_ds)
 
     # Build one-step training and evaluation functions
+    # TODO: examine these
     optimize_fn = losses.optimization_manager(cfg)
     train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, cfg.training.accum)
     eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, cfg.training.accum)
