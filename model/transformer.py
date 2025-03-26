@@ -95,12 +95,9 @@ class TimestepEmbedder(nn.Module):
 
 
 # FIXME: • where's this used?
-#        • adapt to AdaNorm
+#        • adapt to AdaLN
 #        • adapt to cross-attention
 class LabelEmbedder(nn.Module):
-    """
-    Embeds class labels into vector representations. Also handles label dropout for classifier-free guidance.
-    """
     def __init__(self, num_classes, cond_size):
         super().__init__()
         self.embedding_table = nn.Embedding(num_classes + 1, cond_size)
@@ -111,6 +108,36 @@ class LabelEmbedder(nn.Module):
     def forward(self, labels):
         embeddings = self.embedding_table(labels)
         return embeddings
+
+class LabelEmbedderDiT(nn.Module):
+    """
+    Embeds class labels into vector representations. Also handles label dropout for classifier-free guidance.
+    """
+    def __init__(self, num_classes, hidden_size, dropout_prob):
+        super().__init__()
+        use_cfg_embedding = dropout_prob > 0
+        self.embedding_table = nn.Embedding(num_classes + use_cfg_embedding, hidden_size)
+        self.num_classes = num_classes
+        self.dropout_prob = dropout_prob
+
+    def token_drop(self, labels, force_drop_ids=None):
+        """
+        Drops labels to enable classifier-free guidance.
+        """
+        if force_drop_ids is None:
+            drop_ids = torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
+        else:
+            drop_ids = force_drop_ids == 1
+        labels = torch.where(drop_ids, self.num_classes, labels)
+        return labels
+
+    def forward(self, labels, train, force_drop_ids=None):
+        use_dropout = self.dropout_prob > 0
+        if (train and use_dropout) or (force_drop_ids is not None):
+            labels = self.token_drop(labels, force_drop_ids)
+        embeddings = self.embedding_table(labels)
+        return embeddings
+
     
 
 #################################################################################
@@ -292,6 +319,8 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         # the embedding size so it's not all hidden_size
         self.vocab_embed = EmbeddingLayer(config.model.hidden_size, vocab_size)
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
+        # FIXME: conditional embedder (see DiT)
+        self.cond_embed = ... #LabelEmbedderDiT(config.tokens, config.model.hidden_size, config.model.cond_dropout)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
 
         self.blocks = nn.ModuleList([
@@ -310,12 +339,14 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         )
 
 
-    def forward(self, indices, sigma):
+    def forward(self, indices, sigma, cond):
 
         x = self.vocab_embed(indices)
         # FIXME: this needs to be expanded to incorporate the full conditioning
         # Perhaps just do cross attention (in the init)?
-        c = F.silu(self.sigma_map(sigma))
+        t = F.silu(self.sigma_map(sigma))
+        c = self.cond_embed(cond)
+        c = c + t
 
         rotary_cos_sin = self.rotary_emb(x)
 
