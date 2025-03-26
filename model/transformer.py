@@ -370,8 +370,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
     def forward(self, indices, sigma, cond):
 
         x = self.vocab_embed(indices)
-        # FIXME: this needs to be expanded to incorporate the full conditioning
-        # Perhaps just do cross attention (in the init)?
+        # TODO: Implement cross-attention instead of adding conditioning embeddings
         t = F.silu(self.sigma_map(sigma))
         c = self.cond_embed(cond)
         c = c + t

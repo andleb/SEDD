@@ -18,14 +18,14 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
                 raise NotImplementedError("Yeah I gotta do this later")
             else:
                 t = (1 - sampling_eps) * torch.rand(batch.shape[0], device=batch.device) + sampling_eps
-            
+        # FIXME: this is a 1d vector
         sigma, dsigma = noise(t)
         
         if perturbed_batch is None:
             perturbed_batch = graph.sample_transition(batch, sigma[:, None])
 
         log_score_fn = mutils.get_score_fn(model, train=train, sampling=False)
-        # TODO:
+        # NOTE: returns the model output
         log_score = log_score_fn(perturbed_batch, sigma, cond=cond)
 
         loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, batch)

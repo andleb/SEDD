@@ -14,7 +14,7 @@ def get_model_fn(model, train=False):
         A model function.
     """
 
-    def model_fn(x, cond, sigma):
+    def model_fn(x, sigma, cond):
         """Compute the output of the score-based model.
 
         Args:
@@ -32,7 +32,7 @@ def get_model_fn(model, train=False):
         
             # otherwise output the raw values (we handle mlm training in losses.py)
         # FIXME: model called here, pass conditioning!
-        return model(x, cond, sigma)
+        return model(x, sigma, cond)
 
     return model_fn
 
@@ -44,9 +44,9 @@ def get_score_fn(model, train=False, sampling=False):
     model_fn = get_model_fn(model, train=train)
 
     with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-        def score_fn(x, cond, sigma):
+        def score_fn(x, sigma, cond):
             sigma = sigma.reshape(-1)
-            score = model_fn(x, cond, sigma)
+            score = model_fn(x, sigma, cond)
             
             if sampling:
                 # when sampling return true score (not log used for training)
