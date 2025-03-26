@@ -94,6 +94,9 @@ class TimestepEmbedder(nn.Module):
         return t_emb
 
 
+# FIXME: • where's this used?
+#        • adapt to AdaNorm
+#        • adapt to cross-attention
 class LabelEmbedder(nn.Module):
     """
     Embeds class labels into vector representations. Also handles label dropout for classifier-free guidance.
@@ -310,7 +313,8 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
     def forward(self, indices, sigma):
 
         x = self.vocab_embed(indices)
-        # TODO: this needs to be expanded to incorporate the full conditioning
+        # FIXME: this needs to be expanded to incorporate the full conditioning
+        # Perhaps just do cross attention (in the init)?
         c = F.silu(self.sigma_map(sigma))
 
         rotary_cos_sin = self.rotary_emb(x)

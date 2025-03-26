@@ -25,7 +25,9 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
             perturbed_batch = graph.sample_transition(batch, sigma[:, None])
 
         log_score_fn = mutils.get_score_fn(model, train=train, sampling=False)
-        log_score = log_score_fn(perturbed_batch, sigma)
+        # TODO:
+        log_score = log_score_fn(perturbed_batch, sigma, cond=cond)
+
         loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, batch)
 
         loss = (dsigma[:, None] * loss).sum(dim=-1)
@@ -75,6 +77,7 @@ def optimization_manager(config):
 
 
 def get_step_fn(noise, graph, train, optimize_fn, accum):
+
     loss_fn = get_loss_fn(noise, graph, train)
 
     accum_iter = 0

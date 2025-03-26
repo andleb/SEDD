@@ -14,12 +14,12 @@ def get_model_fn(model, train=False):
         A model function.
     """
 
-    def model_fn(x, sigma):
+    def model_fn(x, cond, sigma):
         """Compute the output of the score-based model.
 
         Args:
             x: A mini-batch of input data.
-            labels: A mini-batch of conditioning variables for time steps. Should be interpreted differently
+            cond: A mini-batch of conditioning variables for time steps. Should be interpreted differently
               for different models.
 
         Returns:
@@ -31,7 +31,8 @@ def get_model_fn(model, train=False):
             model.eval()
         
             # otherwise output the raw values (we handle mlm training in losses.py)
-        return model(x, sigma)
+        # FIXME: model called here, pass conditioning!
+        return model(x, cond, sigma)
 
     return model_fn
 
@@ -39,12 +40,13 @@ def get_model_fn(model, train=False):
 def get_score_fn(model, train=False, sampling=False):
     if sampling:
         assert not train, "Must sample in eval mode"
+    # FIXME: pass conditioning
     model_fn = get_model_fn(model, train=train)
 
     with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-        def score_fn(x, sigma):
+        def score_fn(x, cond, sigma):
             sigma = sigma.reshape(-1)
-            score = model_fn(x, sigma)
+            score = model_fn(x, cond, sigma)
             
             if sampling:
                 # when sampling return true score (not log used for training)
