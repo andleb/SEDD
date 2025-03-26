@@ -285,6 +285,8 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.absorb = config.graph.type == "absorb"
         vocab_size = config.tokens + (1 if self.absorb else 0)
 
+        # TODO: maybe a different dimension to distinguis between the transformer size and
+        # the embedding size so it's not all hidden_size
         self.vocab_embed = EmbeddingLayer(config.model.hidden_size, vocab_size)
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
