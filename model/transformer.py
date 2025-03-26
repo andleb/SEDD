@@ -138,7 +138,31 @@ class LabelEmbedderDiT(nn.Module):
         embeddings = self.embedding_table(labels)
         return embeddings
 
-    
+class CNNXEmbedder(nn.Module):
+    """CNN encoder that returns embeddings matching the TimestepEmbedder's output dimension."""
+    def __init__(self, n_filters=32, out_dim=256):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, n_filters, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(n_filters, n_filters, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(n_filters, n_filters, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(n_filters, n_filters, kernel_size=3, padding=1),
+            nn.ReLU()
+        )
+        # Adaptive pooling to reduce spatial dimensions to 1x1
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        # Final linear layer to match the TimestepEmbedder's output dimension
+        self.fc = nn.Linear(n_filters, out_dim)
+
+    def forward(self, x):
+        x = self.encoder(x)         # (batch, n_filters, H, W)
+        x = self.pool(x)            # (batch, n_filters, 1, 1)
+        x = torch.flatten(x, 1)     # (batch, n_filters)
+        x = self.fc(x)              # (batch, out_dim)
+        return x
 
 #################################################################################
 #                                 Core Model                                    #
@@ -301,6 +325,9 @@ class DDitFinalLayer(nn.Module):
         x = self.linear(x)
         return x
 
+#####################################################################
+#                               SEDD Model                                 #
+#####################################################################
 
 class SEDD(nn.Module, PyTorchModelHubMixin):
     def __init__(self, config):
@@ -315,12 +342,13 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.absorb = config.graph.type == "absorb"
         vocab_size = config.tokens + (1 if self.absorb else 0)
 
-        # TODO: maybe a different dimension to distinguis between the transformer size and
+        # TODO: maybe a different dimension to distinguish between the transformer size and
         # the embedding size so it's not all hidden_size
         self.vocab_embed = EmbeddingLayer(config.model.hidden_size, vocab_size)
+        # NOTE: For now, the timestep and conditional embeddings must share dimensions
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
-        # FIXME: conditional embedder (see DiT)
-        self.cond_embed = ... #LabelEmbedderDiT(config.tokens, config.model.hidden_size, config.model.cond_dropout)
+        self.cond_embed = CNNXEmbedder(n_filters=32, out_dim=config.model.cond_dim)
+        #LabelEmbedderDiT(config.tokens, config.model.hidden_size, config.model.cond_dropout)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
 
         self.blocks = nn.ModuleList([
