@@ -1,7 +1,9 @@
 name: small
 type: ddit
-# NOTE: governs both the vocab embedding, the rotary embedding, and the transformer max in MBBert was 120
+# NOTE: governs both the vocab embedding, the rotary embedding, and the transformer.
+# max in MBBert was 120
 hidden_size: 64
+# TODO: might need to increase this
 cond_dim: 128
 # NOTE: this seems to be the text chunk length. Let's try to process the whole image at once
 length: 6400

@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+from einops import repeat
 
 class Rotary(torch.nn.Module):
     def __init__(self, dim, base=10_000):
@@ -51,6 +52,8 @@ def apply_rotary_pos_emb(qkv, cos, sin):
     except:
         return _apply_rotary_pos_emb_torchscript(qkv, cos, sin)
 
+
+# NOTE: ported from Flow Matching codebase: src/flow_matching/examples/text/model/rotary.py:56
 def apply_rotary_emb_torch(x, cos, sin, interleaved=False):
     """
     From: https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/layers/rotary.py#L20

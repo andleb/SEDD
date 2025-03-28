@@ -191,6 +191,9 @@ class DDiTBlock(nn.Module):
 
         ####
         # NOTE: Flow-matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
+        self.dim = dim
+        self.head_dim = self.dim // self.n_heads
+
         self.qw = nn.Linear(dim, dim, bias=False)
         self.kw = nn.Linear(dim, dim, bias=False)
         self.vw = nn.Linear(dim, dim, bias=False)
@@ -310,6 +313,7 @@ class DDiTBlock(nn.Module):
         q, k, v = (item.transpose(1, 2) for item in (q, k, v))
 
         x = F.scaled_dot_product_attention(query=q, key=k, value=v)
+
         #####
 
         x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
@@ -399,9 +403,9 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
     def forward(self, indices, sigma, cond):
 
-        # FIXME: IndexError: tensors used as indices must be long, int, byte or bool tensors
         x = self.vocab_embed(indices)
         # TODO: Implement cross-attention instead of adding conditioning embeddings
+        # TODO: Might need to increase hidden size since embedding into say 128 is not enough
         t = F.silu(self.sigma_map(sigma))
         c = self.cond_embed(cond)
         c = c + t
