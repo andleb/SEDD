@@ -140,8 +140,10 @@ class LabelEmbedderDiT(nn.Module):
 
 class CNNXEmbedder(nn.Module):
     """CNN encoder that returns embeddings matching the TimestepEmbedder's output dimension."""
-    def __init__(self, n_filters=32, out_dim=256):
+    def __init__(self, n_filters=32, out_dim=256, img_size=80):
         super().__init__()
+        self.img_size = img_size
+
         self.encoder = nn.Sequential(
             nn.Conv2d(1, n_filters, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -158,10 +160,18 @@ class CNNXEmbedder(nn.Module):
         self.fc = nn.Linear(n_filters, out_dim)
 
     def forward(self, x):
+        # Check if input is flattened
+        if len(x.shape) == 2:  # [batch, flattened]
+            # Reshape to [batch, 1, height, width]
+            x = x.view(x.size(0), 1, self.img_size, self.img_size)
+        elif len(x.shape) == 3 and x.shape[1] == 1:  # [batch, 1, flattened]
+            x = x.view(x.size(0), 1, self.img_size, self.img_size)
+
         x = self.encoder(x)         # (batch, n_filters, H, W)
         x = self.pool(x)            # (batch, n_filters, 1, 1)
         x = torch.flatten(x, 1)     # (batch, n_filters)
         x = self.fc(x)              # (batch, out_dim)
+
         return x
 
 #################################################################################
@@ -178,6 +188,14 @@ class DDiTBlock(nn.Module):
 
         self.norm1 = LayerNorm(dim)
         self.attn_qkv = nn.Linear(dim, 3 * dim, bias=False)
+
+        ####
+        # NOTE: Flow-matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
+        self.qw = nn.Linear(dim, dim, bias=False)
+        self.kw = nn.Linear(dim, dim, bias=False)
+        self.vw = nn.Linear(dim, dim, bias=False)
+        ####
+
         self.attn_out = nn.Linear(dim, dim, bias=False)
         self.dropout1 = nn.Dropout(dropout)
 
@@ -209,7 +227,7 @@ class DDiTBlock(nn.Module):
         batch_size, seq_len = x.shape[0], x.shape[1]
 
         bias_dropout_scale_fn = self._get_bias_dropout_scale()
-
+        # NOTE: already using ADALN, remove this when implementing cross-attention
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c)[:, None].chunk(6, dim=2)
 
         # attention operation
@@ -217,7 +235,10 @@ class DDiTBlock(nn.Module):
         x = modulate_fused(self.norm1(x), shift_msa, scale_msa)
         # dtype0 = x.dtype
 
+
+
         #####
+        # NOTE: original
         # TODO: re-enable on server
         # qkv = self.attn_qkv(x)
         # qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
@@ -265,6 +286,16 @@ class DDiTBlock(nn.Module):
 
         #####
         # NOTE: Flow matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
+
+        q = self.qw(x)
+        k = self.kw(x)
+        v = self.vw(x)
+
+        q, k, v = (
+            item.view(batch_size, seq_len, self.n_heads, self.head_dim)
+            for item in (q, k, v)
+        )
+
         with torch.amp.autocast("cuda", enabled=False):
             cos, sin = rotary_cos_sin
             original_dtype = q.dtype
@@ -279,9 +310,8 @@ class DDiTBlock(nn.Module):
         q, k, v = (item.transpose(1, 2) for item in (q, k, v))
 
         x = F.scaled_dot_product_attention(query=q, key=k, value=v)
-
-
         #####
+
         x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
 
         x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
