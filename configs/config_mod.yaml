@@ -54,7 +54,7 @@ optim:
   beta1: 0.9
   beta2: 0.999
   eps: 1e-8
-  warmup: 2500
+  warmup: 25
   grad_clip: 1.
 
 # TODO: figure out how to disable this

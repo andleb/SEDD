@@ -5,8 +5,6 @@ import numpy as np
 import math
 
 from einops import rearrange
-# from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
-# from flash_attn.ops.fused_dense import FusedMLP, FusedDense
 from huggingface_hub import PyTorchModelHubMixin
 from omegaconf import OmegaConf
 
@@ -190,6 +188,12 @@ class DDiTBlock(nn.Module):
         self.attn_qkv = nn.Linear(dim, 3 * dim, bias=False)
 
         ####
+        self.is_on_cuda = next(self.parameters(), torch.empty(0)).device.type == 'cuda'
+
+        if self.is_on_cuda:
+            from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+            from flash_attn.ops.fused_dense import FusedMLP, FusedDense
+            
         # NOTE: Flow-matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
         self.dim = dim
         self.head_dim = self.dim // self.n_heads
@@ -241,30 +245,31 @@ class DDiTBlock(nn.Module):
 
 
         #####
-        # NOTE: original
-        # TODO: re-enable on server
-        # qkv = self.attn_qkv(x)
-        # qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
-        # with torch.cuda.amp.autocast(enabled=False):
-        #     cos, sin = rotary_cos_sin
-        #     qkv = rotary.apply_rotary_pos_emb(
-        #         qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
-        #     )
+        # Original
+        if self.is_on_cuda:
+            qkv = self.attn_qkv(x)
+            qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
+            with torch.cuda.amp.autocast(enabled=False):
+                cos, sin = rotary_cos_sin
+                qkv = rotary.apply_rotary_pos_emb(
+                    qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
+                )
 
-        # qkv = rearrange(qkv, 'b s ... -> (b s) ...')
-        # if seqlens is None:
-        #     cu_seqlens = torch.arange(
-        #         0, (batch_size + 1) * seq_len, step=seq_len,
-        #         dtype=torch.int32, device=qkv.device
-        #     )
-        # else:
-        #     cu_seqlens = seqlens.cumsum(-1)
-        # x = flash_attn_varlen_qkvpacked_func(
-        #     qkv, cu_seqlens, seq_len, 0., causal=False)
+            qkv = rearrange(qkv, 'b s ... -> (b s) ...')
+            if seqlens is None:
+                cu_seqlens = torch.arange(
+                    0, (batch_size + 1) * seq_len, step=seq_len,
+                    dtype=torch.int32, device=qkv.device
+                )
+            else:
+                cu_seqlens = seqlens.cumsum(-1)
+            x = flash_attn_varlen_qkvpacked_func(
+                qkv, cu_seqlens, seq_len, 0., causal=False)
 
+            x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
 
         #####
-        # NOTE: temporary torch replacement
+        # temporary torch replacement
         # qkv = self.attn_qkv(x)
         # qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
         # with torch.cuda.amp.autocast(enabled=False):
@@ -288,35 +293,34 @@ class DDiTBlock(nn.Module):
         # x = x.permute(0, 2, 1, 3)
 
         #####
-        # NOTE: Flow matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
+        # Flow matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
+        else:
+            q = self.qw(x)
+            k = self.kw(x)
+            v = self.vw(x)
 
-        q = self.qw(x)
-        k = self.kw(x)
-        v = self.vw(x)
+            q, k, v = (
+                item.view(batch_size, seq_len, self.n_heads, self.head_dim)
+                for item in (q, k, v)
+            )
 
-        q, k, v = (
-            item.view(batch_size, seq_len, self.n_heads, self.head_dim)
-            for item in (q, k, v)
-        )
+            with torch.amp.autocast("cuda", enabled=False):
+                cos, sin = rotary_cos_sin
+                original_dtype = q.dtype
 
-        with torch.amp.autocast("cuda", enabled=False):
-            cos, sin = rotary_cos_sin
-            original_dtype = q.dtype
+                q = rotary.apply_rotary_emb_torch(
+                    x=q.float(), cos=cos.float(), sin=sin.float()
+                ).to(original_dtype)
+                k = rotary.apply_rotary_emb_torch(
+                    x=k.float(), cos=cos.float(), sin=sin.float()
+                ).to(original_dtype)
 
-            q = rotary.apply_rotary_emb_torch(
-                x=q.float(), cos=cos.float(), sin=sin.float()
-            ).to(original_dtype)
-            k = rotary.apply_rotary_emb_torch(
-                x=k.float(), cos=cos.float(), sin=sin.float()
-            ).to(original_dtype)
+            q, k, v = (item.transpose(1, 2) for item in (q, k, v))
 
-        q, k, v = (item.transpose(1, 2) for item in (q, k, v))
+            x = F.scaled_dot_product_attention(query=q, key=k, value=v)
 
-        x = F.scaled_dot_product_attention(query=q, key=k, value=v)
-
+            x = rearrange(x, "b h s d -> b s (h d)", b=batch_size)
         #####
-
-        x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
 
         x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
 
