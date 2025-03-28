@@ -138,20 +138,20 @@ class LabelEmbedderDiT(nn.Module):
 
 class CNNXEmbedder(nn.Module):
     """CNN encoder that returns embeddings matching the TimestepEmbedder's output dimension."""
-    def __init__(self, n_filters=32, out_dim=256, img_size=80):
+    def __init__(self, n_filters=32, out_dim=256, img_size=80, n_layers=4):
         super().__init__()
         self.img_size = img_size
 
-        self.encoder = nn.Sequential(
-            nn.Conv2d(1, n_filters, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(n_filters, n_filters, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(n_filters, n_filters, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(n_filters, n_filters, kernel_size=3, padding=1),
-            nn.ReLU()
-        )
+        layers = []
+        # First conv layer: from 1 input channel to n_filters
+        layers.append(nn.Conv2d(1, n_filters, kernel_size=3, padding=1))
+        layers.append(nn.ReLU())
+        # Remaining conv layers keep same number of channels.
+        for _ in range(n_layers - 1):
+            layers.append(nn.Conv2d(n_filters, n_filters, kernel_size=3, padding=1))
+            layers.append(nn.ReLU())
+
+        self.encoder = nn.Sequential(*layers)
         # Adaptive pooling to reduce spatial dimensions to 1x1
         self.pool = nn.AdaptiveAvgPool2d((1, 1))
         # Final linear layer to match the TimestepEmbedder's output dimension
@@ -165,10 +165,10 @@ class CNNXEmbedder(nn.Module):
         elif len(x.shape) == 3 and x.shape[1] == 1:  # [batch, 1, flattened]
             x = x.view(x.size(0), 1, self.img_size, self.img_size)
 
-        x = self.encoder(x)         # (batch, n_filters, H, W)
-        x = self.pool(x)            # (batch, n_filters, 1, 1)
-        x = torch.flatten(x, 1)     # (batch, n_filters)
-        x = self.fc(x)              # (batch, out_dim)
+        x = self.encoder(x)  # (batch, n_filters, H, W)
+        x = self.pool(x)     # (batch, n_filters, 1, 1)
+        x = torch.flatten(x, 1)  # (batch, n_filters)
+        x = self.fc(x)       # (batch, out_dim)
 
         return x
 
@@ -217,6 +217,7 @@ class DDiTBlock(nn.Module):
         self.dropout = dropout
         
         # TODO: replace with cross-attention
+        # NOTE: this is cond_dim X 6 hidden_dim, so huge!
         self.adaLN_modulation = nn.Linear(cond_dim, 6 * dim, bias=True)
         self.adaLN_modulation.weight.data.zero_()
         self.adaLN_modulation.bias.data.zero_()
@@ -293,7 +294,7 @@ class DDiTBlock(nn.Module):
         # x = x.permute(0, 2, 1, 3)
 
         #####
-        # Flow matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
+        # Flow matching pure torch workaround: src/flow_matching/examples/text/model/transformer.py:133
         else:
             q = self.qw(x)
             k = self.kw(x)
@@ -385,7 +386,10 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.vocab_embed = EmbeddingLayer(config.model.hidden_size, vocab_size)
         # NOTE: For now, the timestep and conditional embeddings must share dimensions
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
-        self.cond_embed = CNNXEmbedder(n_filters=32, out_dim=config.model.cond_dim)
+
+        # NOTE: custom CNN embedder
+        self.cond_embed = CNNXEmbedder(n_filters=config.model.n_filters, out_dim=config.model.cond_dim, img_size=config.model.img_size, n_layers=config.model.n_cnn_layers)
+
         #LabelEmbedderDiT(config.tokens, config.model.hidden_size, config.model.cond_dropout)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
 

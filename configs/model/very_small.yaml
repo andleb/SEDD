@@ -2,13 +2,17 @@ name: small
 type: ddit
 # NOTE: governs both the vocab embedding, the rotary embedding, and the transformer.
 # max in MBBert was 120
-hidden_size: 16
+hidden_size: 8
 # TODO: might need to increase this
-cond_dim: 192
+cond_dim: 32
 # NOTE: this seems to be the text chunk length. Let's try to process the whole image at once
 length: 6400
+img_size: 80
 #NOTE: For MDBert, I used 4 blocks, 8 attention heads
 n_blocks: 2
-n_heads: 4
+n_heads: 2
 scale_by_sigma: True
 dropout: 0.1
+# CNNEmbedder params
+n_filters: 16
+n_cnn_layers: 3

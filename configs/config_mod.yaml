@@ -8,7 +8,7 @@ tokens: 2
 
 # TODO: adjust!
 training:
-  batch_size: 128
+  batch_size: 32
   accum: 1
   n_iters: 10000
   snapshot_freq: 1000
@@ -44,7 +44,7 @@ sampling:
 eval:
   batch_size: 512
   # TODO: figure out how to disable perplexity
-  perplexity: True
+  perplexity: False
   perplexity_batch_size: 32
 
 optim:
