@@ -8,11 +8,11 @@ tokens: 2
 
 # TODO: adjust!
 training:
-  batch_size: 32
+  batch_size: 6
   accum: 1
-  n_iters: 10000
+  n_iters: 100
+  log_freq: 5
   snapshot_freq: 1000
-  log_freq: 50
   eval_freq: 100
   snapshot_freq_for_preemption: 1000
   weight: standard
