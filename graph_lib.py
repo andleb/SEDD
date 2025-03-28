@@ -170,12 +170,12 @@ class Uniform(Graph):
         ratio = 1 - self.dim / (esigm1 + self.dim)
 
         # negative term
-        neg_term = score.mean(dim=-1) - torch.gather(score, -1, x[..., None]).squeeze(-1) / self.dim
+        neg_term = score.mean(dim=-1) - torch.gather(score, -1, x[..., None].long()).squeeze(-1) / self.dim
         # no move means scaling by the uniform ratio. move means alter only one ratio away from 1
         neg_term = torch.where(
             x == x0,
             ratio * neg_term,
-            torch.gather(score, -1, x0[..., None]).squeeze(-1) / esigm1 + neg_term
+            torch.gather(score, -1, x0[..., None].long()).squeeze(-1) / esigm1 + neg_term
         )
 
         # constant factor
@@ -187,7 +187,7 @@ class Uniform(Graph):
 
         #positive term
         sexp = score.exp()
-        pos_term = sexp.mean(dim=-1) - torch.gather(sexp, -1, x[..., None]).squeeze(-1) / self.dim
+        pos_term = sexp.mean(dim=-1) - torch.gather(sexp, -1, x[..., None].long()).squeeze(-1) / self.dim
         return pos_term - neg_term + const
 
 
@@ -256,7 +256,7 @@ class Absorbing(Graph):
         other_ind = x0[rel_ind]
 
         # negative_term
-        neg_term = ratio * torch.gather(score[rel_ind], -1, other_ind[..., None]).squeeze(-1)
+        neg_term = ratio * torch.gather(score[rel_ind], -1, other_ind[..., None].long()).squeeze(-1)
 
         #positive term
         pos_term = score[rel_ind][:, :-1].exp().sum(dim=-1)
