@@ -247,28 +247,27 @@ class DDiTBlock(nn.Module):
 
         #####
         # Original
-        if self.is_on_cuda:
-            qkv = self.attn_qkv(x)
-            qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
-            with torch.cuda.amp.autocast(enabled=False):
-                cos, sin = rotary_cos_sin
-                qkv = rotary.apply_rotary_pos_emb(
-                    qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
-                )
-
-            qkv = rearrange(qkv, 'b s ... -> (b s) ...')
-            if seqlens is None:
-                cu_seqlens = torch.arange(
-                    0, (batch_size + 1) * seq_len, step=seq_len,
-                    dtype=torch.int32, device=qkv.device
-                )
-            else:
-                cu_seqlens = seqlens.cumsum(-1)
-            x = flash_attn_varlen_qkvpacked_func(
-                qkv, cu_seqlens, seq_len, 0., causal=False)
-
-            x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
-
+        # if self.is_on_cuda:
+        #     qkv = self.attn_qkv(x)
+        #     qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
+        #     with torch.cuda.amp.autocast(enabled=False):
+        #         cos, sin = rotary_cos_sin
+        #         qkv = rotary.apply_rotary_pos_emb(
+        #             qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
+        #         )
+        #
+        #     qkv = rearrange(qkv, 'b s ... -> (b s) ...')
+        #     if seqlens is None:
+        #         cu_seqlens = torch.arange(
+        #             0, (batch_size + 1) * seq_len, step=seq_len,
+        #             dtype=torch.int32, device=qkv.device
+        #         )
+        #     else:
+        #         cu_seqlens = seqlens.cumsum(-1)
+        #     x = flash_attn_varlen_qkvpacked_func(
+        #         qkv, cu_seqlens, seq_len, 0., causal=False)
+        #
+        #     x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
         #####
         # temporary torch replacement
         # qkv = self.attn_qkv(x)
@@ -295,32 +294,32 @@ class DDiTBlock(nn.Module):
 
         #####
         # Flow matching pure torch workaround: src/flow_matching/examples/text/model/transformer.py:133
-        else:
-            q = self.qw(x)
-            k = self.kw(x)
-            v = self.vw(x)
+        # else:
+        q = self.qw(x)
+        k = self.kw(x)
+        v = self.vw(x)
 
-            q, k, v = (
-                item.view(batch_size, seq_len, self.n_heads, self.head_dim)
-                for item in (q, k, v)
-            )
+        q, k, v = (
+            item.view(batch_size, seq_len, self.n_heads, self.head_dim)
+            for item in (q, k, v)
+        )
 
-            with torch.amp.autocast("cuda", enabled=False):
-                cos, sin = rotary_cos_sin
-                original_dtype = q.dtype
+        with torch.amp.autocast("cuda", enabled=False):
+            cos, sin = rotary_cos_sin
+            original_dtype = q.dtype
 
-                q = rotary.apply_rotary_emb_torch(
-                    x=q.float(), cos=cos.float(), sin=sin.float()
-                ).to(original_dtype)
-                k = rotary.apply_rotary_emb_torch(
-                    x=k.float(), cos=cos.float(), sin=sin.float()
-                ).to(original_dtype)
+            q = rotary.apply_rotary_emb_torch(
+                x=q.float(), cos=cos.float(), sin=sin.float()
+            ).to(original_dtype)
+            k = rotary.apply_rotary_emb_torch(
+                x=k.float(), cos=cos.float(), sin=sin.float()
+            ).to(original_dtype)
 
-            q, k, v = (item.transpose(1, 2) for item in (q, k, v))
+        q, k, v = (item.transpose(1, 2) for item in (q, k, v))
 
-            x = F.scaled_dot_product_attention(query=q, key=k, value=v)
+        x = F.scaled_dot_product_attention(query=q, key=k, value=v)
 
-            x = rearrange(x, "b h s d -> b s (h d)", b=batch_size)
+        x = rearrange(x, "b h s d -> b s (h d)", b=batch_size)
         #####
 
         x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
