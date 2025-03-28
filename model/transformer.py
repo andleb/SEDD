@@ -190,9 +190,9 @@ class DDiTBlock(nn.Module):
         ####
         self.is_on_cuda = next(self.parameters(), torch.empty(0)).device.type == 'cuda'
 
-        if self.is_on_cuda:
-            from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
-            from flash_attn.ops.fused_dense import FusedMLP, FusedDense
+        # if self.is_on_cuda:
+            # from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+            # from flash_attn.ops.fused_dense import FusedMLP, FusedDense
             
         # NOTE: Flow-matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
         self.dim = dim
