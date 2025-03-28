@@ -369,6 +369,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
     def forward(self, indices, sigma, cond):
 
+        # FIXME: IndexError: tensors used as indices must be long, int, byte or bool tensors
         x = self.vocab_embed(indices)
         # TODO: Implement cross-attention instead of adding conditioning embeddings
         t = F.silu(self.sigma_map(sigma))
