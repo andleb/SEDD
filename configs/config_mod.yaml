@@ -10,7 +10,7 @@ tokens: 2
 training:
   batch_size: 6
   accum: 1
-  n_iters: 100
+  n_iters: 100001
   log_freq: 5
   snapshot_freq: 1000
   eval_freq: 100
