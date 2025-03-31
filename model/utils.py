@@ -31,7 +31,6 @@ def get_model_fn(model, train=False):
             model.eval()
         
             # otherwise output the raw values (we handle mlm training in losses.py)
-        # FIXME: model called here, pass conditioning!
         return model(x, sigma, cond)
 
     return model_fn

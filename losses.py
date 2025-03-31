@@ -18,7 +18,7 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
                 raise NotImplementedError("Yeah I gotta do this later")
             else:
                 t = (1 - sampling_eps) * torch.rand(batch.shape[0], device=batch.device) + sampling_eps
-        # FIXME: this is a 1d vector
+        # NOTE: this is a 1d vector - each batch item gets a different t / logSNR
         sigma, dsigma = noise(t)
         
         if perturbed_batch is None:

@@ -126,6 +126,7 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
 
     @torch.no_grad()
     def pc_sampler(model):
+        # FIXME: pass conditioning
         sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True)
         x = graph.sample_limit(*batch_dims).to(device)
         timesteps = torch.linspace(1, eps, steps + 1, device=device)

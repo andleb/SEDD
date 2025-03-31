@@ -92,9 +92,6 @@ class TimestepEmbedder(nn.Module):
         return t_emb
 
 
-# FIXME: • where's this used?
-#        • adapt to AdaLN
-#        • adapt to cross-attention
 class LabelEmbedder(nn.Module):
     def __init__(self, num_classes, cond_size):
         super().__init__()
@@ -136,6 +133,9 @@ class LabelEmbedderDiT(nn.Module):
         embeddings = self.embedding_table(labels)
         return embeddings
 
+
+# TODO: • adapt to cross-attention
+#       • adapt if changing the arch to sth else than transformer
 class CNNXEmbedder(nn.Module):
     """CNN encoder that returns embeddings matching the TimestepEmbedder's output dimension."""
     def __init__(self, n_filters=32, out_dim=256, img_size=80, n_layers=4):

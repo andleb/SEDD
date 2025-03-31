@@ -226,7 +226,6 @@ class Absorbing(Graph):
             0
         )[..., None]
         return edge
-# FIXME: this needs to work with Z tensors | or revert and flatten the inputs instead
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
         move_indices = torch.rand(*i.shape, device=i.device) < move_chance#.unsqueeze(-1)
