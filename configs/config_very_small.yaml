@@ -10,7 +10,11 @@ work_dir: ../res/sedd/very_small
 training:
   tau: 0.01
   batch_size: 2
+  # NOTE: this takes batches into account!
   n_iters: 500000
+  # This doesn't!
+  n_epochs: 250
+  # NOTE: gradient accumulation
   accum: 1
   ema: 0.9999
   log_freq: 5
