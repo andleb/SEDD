@@ -9,7 +9,7 @@ work_dir: ../res/sedd/very_small
 
 training:
   tau: 0.01
-  batch_size: 7
+  batch_size: 2
   n_iters: 500000
   accum: 1
   ema: 0.9999
