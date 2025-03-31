@@ -8,15 +8,17 @@ tokens: 50257
 
 training:
   batch_size: 512
-  accum: 1
   n_iters: 1300001
-  snapshot_freq: 50000
+  accum: 1
+  ema: 0.9999
   log_freq: 50
   eval_freq: 100
-  snapshot_freq_for_preemption: 10000
-  weight: standard
+  snapshot_freq: 500000
   snapshot_sampling: True
-  ema: 0.9999
+  # NOTE: this is something to do with distributed training
+  snapshot_freq_for_preemption: 10000
+  # NOTE: I don't think this is used
+  weight: standard
 
 data:
   train: openwebtext

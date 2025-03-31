@@ -188,7 +188,7 @@ class DDiTBlock(nn.Module):
         self.attn_qkv = nn.Linear(dim, 3 * dim, bias=False)
 
         ####
-        self.is_on_cuda = next(self.parameters(), torch.empty(0)).device.type == 'cuda'
+        self.is_on_cuda = next(self.parameters()).device.type == 'cuda'
 
         # if self.is_on_cuda:
             # from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func

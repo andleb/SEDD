@@ -129,14 +129,11 @@ def _run(rank, world_size, cfg):
     eval_iter = iter(eval_ds)
 
     # Build one-step training and evaluation functions
-    # TODO: examine these
     optimize_fn = losses.optimization_manager(cfg)
     train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, cfg.training.accum)
     eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, cfg.training.accum)
 
 
-    # TODO: what's this?
-    #
     if cfg.training.snapshot_sampling:
         sampling_shape = (cfg.training.batch_size // (cfg.ngpus * cfg.training.accum), cfg.model.length)
         sampling_fn = sampling.get_sampling_fn(cfg, graph, noise, sampling_shape, sampling_eps, device)
@@ -153,6 +150,7 @@ def _run(rank, world_size, cfg):
             batch = next(train_iter)['input_ids'].to(device)
         else:
             batch = next(train_iter).to(device)
+
         loss = train_step_fn(state, batch)
 
         # flag to see if there was movement ie a full batch got computed

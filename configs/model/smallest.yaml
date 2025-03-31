@@ -1,4 +1,4 @@
-name: small
+name: smallest
 type: ddit
 # NOTE: governs both the vocab embedding, the rotary embedding, and the transformer.
 # max in MBBert was 120

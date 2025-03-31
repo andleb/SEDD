@@ -1,0 +1,48 @@
+defaults:
+  - _self_
+  - model: small
+  - override hydra/launcher: submitit_slurm
+
+ngpus: 1
+tokens: 2
+work_dir: ../res/sedd/very_small
+
+training:
+  tau: 0.01
+  batch_size: 8
+  n_iters: 500000
+  accum: 1
+  ema: 0.9999
+  log_freq: 5
+  snapshot_freq: 10000
+  snapshot_sampling: True
+  eval_freq: 100
+  weight: standard
+
+graph:
+  type: absorb
+  file: data
+  report_all: False
+
+noise:
+  type: loglinear
+  sigma_min: 1e-4
+  sigma_max: 20
+
+sampling:
+  predictor: euler
+  steps: 128
+  noise_removal: True
+
+eval:
+  batch_size: 512
+
+optim:
+  weight_decay: 0
+  optimizer: AdamW
+  lr: 5e-4
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1e-8
+  warmup: 25
+  grad_clip: 1.
