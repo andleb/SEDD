@@ -42,7 +42,7 @@ class Predictor(abc.ABC):
         self.noise = noise
 
     @abc.abstractmethod
-    def update_fn(self, score_fn, x, t, step_size):
+    def update_fn(self, score_fn, x, t, cond, step_size):
         """One update of the predictor.
 
         Args:
@@ -58,9 +58,11 @@ class Predictor(abc.ABC):
 
 @register_predictor(name="euler")
 class EulerPredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size):
+    """This is the Euler predictor."""
+    def update_fn(self, score_fn, x, t, cond, step_size):
         sigma, dsigma = self.noise(t)
-        score = score_fn(x, sigma)
+
+        score = score_fn(x, sigma, cond)
 
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
         x = self.graph.sample_rate(x, rev_rate)
@@ -68,18 +70,19 @@ class EulerPredictor(Predictor):
 
 @register_predictor(name="none")
 class NonePredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size):
+    def update_fn(self, score_fn, x, t, cond, step_size):
         return x
 
 
 @register_predictor(name="analytic")
 class AnalyticPredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size):
+    """This is the Tweedie predictor."""
+    def update_fn(self, score_fn, x, t, cond, step_size):
         curr_sigma = self.noise(t)[0]
         next_sigma = self.noise(t - step_size)[0]
         dsigma = curr_sigma - next_sigma
 
-        score = score_fn(x, curr_sigma)
+        score = score_fn(x, curr_sigma, cond)
 
         stag_score = self.graph.staggered_score(score, dsigma)
         probs = stag_score * self.graph.transp_transition(x, dsigma)
@@ -91,10 +94,10 @@ class Denoiser:
         self.graph = graph
         self.noise = noise
 
-    def update_fn(self, score_fn, x, t):
+    def update_fn(self, score_fn, x, t, cond=None):
         sigma = self.noise(t)[0]
 
-        score = score_fn(x, sigma)
+        score = score_fn(x, sigma, cond)
         stag_score = self.graph.staggered_score(score, sigma)
         probs = stag_score * self.graph.transp_transition(x, sigma)
         # truncate probabilities
@@ -125,8 +128,8 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
     denoiser = Denoiser(graph, noise)
 
     @torch.no_grad()
-    def pc_sampler(model):
-        # FIXME: pass conditioning
+    def pc_sampler(model, cond=None):
+        # NOTE: score expects (x, sigma, cond)
         sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True)
         x = graph.sample_limit(*batch_dims).to(device)
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
@@ -135,14 +138,14 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
         for i in range(steps):
             t = timesteps[i] * torch.ones(x.shape[0], 1, device=device)
             x = projector(x)
-            x = predictor.update_fn(sampling_score_fn, x, t, dt)
+            x = predictor.update_fn(sampling_score_fn, x, t, cond, dt)
             
 
         if denoise:
             # denoising step
             x = projector(x)
             t = timesteps[-1] * torch.ones(x.shape[0], 1, device=device)
-            x = denoiser.update_fn(sampling_score_fn, x, t)
+            x = denoiser.update_fn(sampling_score_fn, x, t, cond)
             
         return x
     

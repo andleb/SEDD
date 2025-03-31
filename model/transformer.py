@@ -414,8 +414,11 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         # TODO: Implement cross-attention instead of adding conditioning embeddings
         # TODO: Might need to increase hidden size since embedding into say 128 is not enough
         t = F.silu(self.sigma_map(sigma))
-        c = self.cond_embed(cond)
-        c = c + t
+        if cond is not None:
+            c = self.cond_embed(cond)
+            c = c + t
+        else:
+            c = t
 
         rotary_cos_sin = self.rotary_emb(x)
 

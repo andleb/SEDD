@@ -241,6 +241,12 @@ class Absorbing(Graph):
         return score
 
     def sample_limit(self, *batch_dims):
+        """
+        Samples the limiting/stationary distribution.
+        """
+        # NOTE: this is a uniform distribution over all but the absorbing state
+        #return F.one_hot((self.dim - 1) * torch.ones_like(i), num_classes=self.dim)
+
         return (self.dim - 1) * torch.ones(*batch_dims, dtype=torch.int64)
 
     def score_entropy(self, score, sigma, x, x0):

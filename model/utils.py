@@ -39,7 +39,6 @@ def get_model_fn(model, train=False):
 def get_score_fn(model, train=False, sampling=False):
     if sampling:
         assert not train, "Must sample in eval mode"
-    # FIXME: pass conditioning
     model_fn = get_model_fn(model, train=train)
 
     with torch.cuda.amp.autocast(dtype=torch.bfloat16):
