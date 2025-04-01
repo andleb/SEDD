@@ -421,7 +421,8 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
             c = t
 
         rotary_cos_sin = self.rotary_emb(x)
-
+        # NOTE: x should be the score output by DiTFinalLayer - some sort of logit as we're modelling the log of the score
+        # see src/SEDD/graph_lib.py:267 for score entropy
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
             for i in range(len(self.blocks)):
                 x = self.blocks[i](x, rotary_cos_sin, c, seqlens=None)
@@ -433,7 +434,9 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
             assert self.absorb, "Haven't configured this to work."
             esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
             x = x - esigm1_log - np.log(x.shape[-1] - 1)# this will be approximately averaged at 0
-            
+
+        # NOTE: this replaces x with zeros at indices as this is only used in score entropy calc,
+        # which doesn't include the  "self-score" y=x in the sum
         x = torch.scatter(x, -1, indices[..., None].long(), torch.zeros_like(x[..., :1]))
 
         return x
