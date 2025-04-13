@@ -161,7 +161,7 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
         dropout = config.model.dropout
 
         # We'll combine Z and X by concatenating channels => 2 input channels
-        in_channels = 2
+        in_channels = config.model.in_channels  # e.g. 2
 
         # "Prep" 1×1 conv: (2 -> num_cnn_channels)
         self.prep_conv = nn.Conv2d(in_channels, self.num_cnn_channels, kernel_size=1)
