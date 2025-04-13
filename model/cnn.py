@@ -1,91 +1,68 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 import math
+import numpy as np
 
-from einops import rearrange
 from huggingface_hub import PyTorchModelHubMixin
 from omegaconf import OmegaConf
 
-#####################################################################
-#                         Timestep Embedder                          #
-#####################################################################
+##############################################################################
+#                          Timestep Embedder                                 #
+##############################################################################
 
 class TimestepEmbedder(nn.Module):
     """
-    Embeds scalar timesteps into vector representations.
+    Embeds scalar timesteps into a vector representation of size `hidden_size`.
     """
     def __init__(self, hidden_size, frequency_embedding_size=256):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(frequency_embedding_size, hidden_size, bias=True),
+            nn.Linear(frequency_embedding_size, hidden_size),
             nn.SiLU(),
-            nn.Linear(hidden_size, hidden_size, bias=True),
+            nn.Linear(hidden_size, hidden_size),
         )
         self.frequency_embedding_size = frequency_embedding_size
 
     @staticmethod
     def timestep_embedding(t, dim, max_period=10000):
         """
-        Create sinusoidal timestep embeddings.
         :param t: a 1-D Tensor of N indices, one per batch element.
                           These may be fractional.
         :param dim: the dimension of the output.
         :param max_period: controls the minimum frequency of the embeddings.
         :return: an (N, D) Tensor of positional embeddings.
+        Create sinusoidal timestep embeddings of shape (B, dim).
         """
-        # same as in many diffusion repos
         half = dim // 2
         freqs = torch.exp(
-            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
-        ).to(device=t.device)
+            -math.log(max_period)
+            * torch.arange(start=0, end=half, dtype=torch.float32, device=t.device)
+            / half
+        )
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
-        if dim % 2:
+        if dim % 2 == 1:
+            # zero pad
             embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
         return embedding
 
     def forward(self, t):
-        t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
-        t_emb = self.mlp(t_freq)
-        return t_emb
-
-#####################################################################
-#                 Simple Discrete Embedding for Z                   #
-#####################################################################
-
-class EmbeddingLayer(nn.Module):
-    """
-    Learns an embedding table for discrete tokens (vocab_dim).
-    Will output an embedding dimension 'hidden_dim'.
-    Later we will reshape from (B, H*W, hidden_dim) to (B, hidden_dim, H, W).
-    """
-    def __init__(self, hidden_dim, vocab_dim):
-        super().__init__()
-        self.hidden_dim = hidden_dim
-        self.vocab_dim = vocab_dim
-
-        # An embedding for discrete tokens
-        self.embedding = nn.Embedding(vocab_dim, hidden_dim)
-        # Initialize
-        nn.init.kaiming_uniform_(self.embedding.weight, a=math.sqrt(5))
-
-    def forward(self, indices):
         """
-        indices: (B, H*W) or (B, seq_len) of discrete tokens
-        returns: (B, seq_len, hidden_dim)
+        :param t: shape (B,) with diffusion timesteps
+        :return: shape (B, hidden_size)
         """
-        return self.embedding(indices)
+        t_sin = self.timestep_embedding(t, self.frequency_embedding_size)
+        return self.mlp(t_sin)
 
-#####################################################################
-#                     CNN Residual Building Block                    #
-#####################################################################
+##############################################################################
+#                     A Simple CNN Residual Block (FiLM)                     #
+##############################################################################
 
 class CNNResidualBlock(nn.Module):
     """
-    A simple CNN residual block that also supports FiLM-like conditioning
-    from a global embedding (e.g., the time embedding).
+    A residual CNN block that uses FiLM-like conditioning from a global embedding
+    (e.g. the diffusion timestep embedding).
     """
 
     def __init__(self, num_channels, time_emb_dim, dropout=0.0):
@@ -105,186 +82,145 @@ class CNNResidualBlock(nn.Module):
         self.norm1 = nn.GroupNorm(num_groups=8, num_channels=num_channels)
         self.norm2 = nn.GroupNorm(num_groups=8, num_channels=num_channels)
 
-        # FiLM (or AdaIN) parameters derived from time embedding
-        # We'll produce (scale, shift) for conv1 and conv2
+        # FiLM parameters derived from time embedding
+        # We'll produce (gamma, beta) for each conv
         self.time_mlp = nn.Sequential(
             nn.SiLU(),
-            nn.Linear(time_emb_dim, 2 * num_channels)
+            nn.Linear(time_emb_dim, 2 * num_channels),
         )
 
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, time_emb):
         """
-        x: (B, C, H, W)
-        time_emb: (B, time_emb_dim) -- global embedding from TimestepEmbedder
+        :param x: (B, C, H, W)
+        :param time_emb: (B, time_emb_dim)
         """
-        # Derive FiLM parameters
-        film_params = self.time_mlp(time_emb)  # (B, 2*C)
-        gamma1, beta1 = film_params[:, :self.num_channels], film_params[:, self.num_channels:2*self.num_channels]
-        # We'll re-use the same FiLM parameters for both convs in this simple design
+        # FiLM parameters
+        film = self.time_mlp(time_emb)  # shape (B, 2*C)
+        gamma1, beta1 = film[:, :self.num_channels], film[:, self.num_channels:]
+        # For simplicity, use the same FiLM parameters for both convs
         gamma2, beta2 = gamma1, beta1
 
         # First conv
-        h = self.norm1(x)
         # Apply FiLM for the first conv
         # shape of gamma1, beta1 is (B, C) -> we need to unsqueeze to broadcast
-        h = h * (1 + gamma1.unsqueeze(-1).unsqueeze(-1)) + beta1.unsqueeze(-1).unsqueeze(-1)
-        h = F.silu(h)
-        h = self.conv1(h)
+        out = self.norm1(x)
+        out = out * (1 + gamma1.view(-1, self.num_channels, 1, 1)) + beta1.view(-1, self.num_channels, 1, 1)
+        out = F.silu(out)
+        out = self.conv1(out)
 
         # Second conv
-        h = self.norm2(h)
-        h = h * (1 + gamma2.unsqueeze(-1).unsqueeze(-1)) + beta2.unsqueeze(-1).unsqueeze(-1)
-        h = F.silu(h)
-        h = self.dropout(h)  # optional dropout
-        h = self.conv2(h)
+        out = self.norm2(out)
+        out = out * (1 + gamma2.view(-1, self.num_channels, 1, 1)) + beta2.view(-1, self.num_channels, 1, 1)
+        out = F.silu(out)
+        out = self.dropout(out)
+        out = self.conv2(out)
 
-        # Residual connection
-        return x + h
+        # Residual
+        return x + out
 
-#####################################################################
-#                     The CNN-based SEDD Model                       #
-#####################################################################
+##############################################################################
+#                  CNN-Based SEDD Model (Discrete Diffusion)                 #
+##############################################################################
 
 class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
     """
-    A CNN-based variant of the SEDD model, replacing the Transformer blocks
-    with CNN residual blocks.  The main idea is to concatenate:
-      - The discrete diffusion variable Z (embedded as channels)
-      - The noisy conditioning X (raw or possibly with 1 channel)
-    Then run multiple CNN residual blocks.
-    Finally, output a per-pixel classification over the vocabulary.
+    CNN-based variant of your Score Entropy Diffusion model.
+    - Z: [B, 1, H, W] with 0/1 star positions
+    - X: [B, 1, H, W] with noisy conditioning image
+    - Output: logits over the discrete states for each pixel, shape [B, vocab_size, H, W].
+      For binary diffusion, set vocab_size=2.
     """
 
     def __init__(self, config):
         super().__init__()
 
-        # Handle config as OmegaConf
+        # If config is dict, convert to OmegaConf for convenience
         if isinstance(config, dict):
             config = OmegaConf.create(config)
         self.config = config
 
-        # Are we in "absorb" mode? (Original code used this to add 1 to vocab size)
-        self.absorb = config.graph.type == "absorb"
+        # 'absorb' or not
+        self.absorb = (config.graph.type == "absorb")
+        # In a binary case, you might do config.tokens=2,
+        # plus 1 if 'absorb' is used.
         vocab_size = config.tokens + (1 if self.absorb else 0)
+        self.vocab_size = vocab_size
 
-        # For discrete tokens Z
-        self.vocab_embed_dim = config.model.hidden_size  # e.g. 256
-        self.vocab_embed = EmbeddingLayer(self.vocab_embed_dim, vocab_size)
+        # Timestep embedding dimension
+        self.time_emb_dim = config.model.cond_dim
+        self.sigma_map = TimestepEmbedder(self.time_emb_dim)
 
-        # Timestep embedding
-        self.time_embed_dim = config.model.cond_dim   # e.g. 256
-        self.sigma_map = TimestepEmbedder(self.time_embed_dim)
-
-        # Whether or not to scale the outputs by sigma at the end
+        # If the code requires scaling by sigma at the end
         self.scale_by_sigma = config.model.scale_by_sigma
 
-        # Number of CNN channels in the main body
-        self.num_cnn_channels = config.model.cnn_channels  # e.g. 64 or 128
+        # For CNN
+        self.num_cnn_channels = config.model.cnn_channels  # e.g. 64
+        n_cnn_blocks = config.model.n_blocks  # how many residual blocks
+        dropout = config.model.dropout
 
-        # We will build a small sequence of CNN blocks
-        n_cnn_blocks = config.model.n_blocks  # re-using config.model.n_blocks for CNN depth
+        # We'll combine Z and X by concatenating channels => 2 input channels
+        in_channels = 2
 
-        # 1) A "prep" conv that merges embedded Z and the conditioning X
-        #    so the shape is [B, self.num_cnn_channels, H, W].
-        #
-        #    - Suppose Z -> shape [B, vocab_embed_dim, H, W]
-        #    - Suppose X -> shape [B, 1, H, W], or possibly more channels
-        #      if your conditioning has more channels.
-        #    - We just concat along channel dimension, then reduce to num_cnn_channels.
-        #
-        #    We do a 1x1 conv from (vocab_embed_dim + cond_channels) -> num_cnn_channels.
-        cond_channels = config.model.cond_channels  # e.g. 1 if X is just a single channel
-        in_channels = self.vocab_embed_dim + cond_channels
-
+        # "Prep" 1×1 conv: (2 -> num_cnn_channels)
         self.prep_conv = nn.Conv2d(in_channels, self.num_cnn_channels, kernel_size=1)
 
-        # 2) CNN residual blocks
+        # Build CNN residual blocks
         blocks = []
         for _ in range(n_cnn_blocks):
-            blocks.append(CNNResidualBlock(self.num_cnn_channels,
-                                           time_emb_dim=self.time_embed_dim,
-                                           dropout=config.model.dropout))
+            blocks.append(CNNResidualBlock(
+                num_channels=self.num_cnn_channels,
+                time_emb_dim=self.time_emb_dim,
+                dropout=dropout
+            ))
         self.cnn_blocks = nn.ModuleList(blocks)
 
-        # 3) Final projection to get logits over the vocab
-        #    We'll do a 1x1 conv from (num_cnn_channels) -> vocab_size
+        # Final 1×1 conv to produce per-pixel logits => shape [B, vocab_size, H, W]
         self.final_conv = nn.Conv2d(self.num_cnn_channels, vocab_size, kernel_size=1)
 
-    def forward(self, indices, sigma, cond):
+    def forward(self, z_img, sigma, x_img):
         """
-        :param indices: (B, H*W) discrete tokens for star/no-star
-        :param sigma:   (B,) diffusion times
-        :param cond:    (B, cond_channels, H, W) or possibly (B, H*W) to reshape
-        :return: logits over vocab, shape (B, vocab_size, H, W)
+        :param z_img: [B, 1, H, W], the discrete star map (0 or 1)
+        :param sigma: [B,], diffusion timesteps
+        :param x_img: [B, 1, H, W], the noisy conditioning
+        :return: logits over the discrete states, shape [B, vocab_size, H, W]
         """
-        B = indices.shape[0]
 
-        # ------------------------------------------------------
-        # 1) Embed the discrete variable Z
-        #    Suppose indices has shape (B, H*W). We want to reshape to (B, H, W).
-        #    Let the config say the image is config.model.img_size x img_size
-        # ------------------------------------------------------
-        H = self.config.model.img_size
-        W = self.config.model.img_size
-        x_embed = self.vocab_embed(indices)   # (B, H*W, embed_dim)
-        x_embed = rearrange(x_embed, "b (h w) c -> b c h w", h=H, w=W)  # (B, embed_dim, H, W)
+        B, _, H, W = z_img.shape
+        # Concatenate Z and X along channel dimension => shape [B, 2, H, W]
+        combined = torch.cat([z_img, x_img], dim=1)
 
-        # cond might already be shape (B, cond_channels, H, W).
-        # if it's flattened, reshape here
-        if cond.dim() == 2 and cond.shape[1] == H*W:
-            cond = cond.view(B, 1, H, W)  # assume 1 channel for the conditioning
+        # Map to CNN channels
+        h = self.prep_conv(combined)  # (B, num_cnn_channels, H, W)
 
-        # ------------------------------------------------------
-        # 2) Concatenate along channel dimension [Z_embed, cond]
-        #    => shape (B, embed_dim + cond_channels, H, W)
-        # ------------------------------------------------------
-        x = torch.cat([x_embed, cond], dim=1)
+        # Get the time embedding
+        t_emb = self.sigma_map(sigma)  # (B, time_emb_dim)
 
-        # ------------------------------------------------------
-        # 3) Map to the base CNN channels
-        # ------------------------------------------------------
-        x = self.prep_conv(x)  # (B, num_cnn_channels, H, W)
-
-        # ------------------------------------------------------
-        # 4) Timestep embedding
-        #    We'll pass this to each CNN residual block for FiLM
-        # ------------------------------------------------------
-        t_emb = self.sigma_map(sigma)  # shape (B, time_embed_dim)
-
-        # ------------------------------------------------------
-        # 5) CNN blocks
-        # ------------------------------------------------------
+        # Pass through CNN residual blocks
         for block in self.cnn_blocks:
-            x = block(x, t_emb)
+            h = block(h, t_emb)
 
-        # ------------------------------------------------------
-        # 6) Final projection to vocab logits
-        # ------------------------------------------------------
-        logits = self.final_conv(x)  # (B, vocab_size, H, W)
+        # Final projection
+        logits = self.final_conv(h)  # (B, vocab_size, H, W)
 
-        # ------------------------------------------------------
-        # 7) scale_by_sigma logic (optional)
-        #    This was done for "absorb" case in the original code
-        # ------------------------------------------------------
+        # Optionally scale by sigma (from original code)
         if self.scale_by_sigma:
-            # Typically used for discrete offset in some SED approaches
-            # This exactly follows the original:
-            #   esigm1_log = log(expm1(sigma)) or log(exp(sigma) - 1)
-            assert self.absorb, "Haven’t configured scale_by_sigma unless absorb is True."
-            esigm1_log = torch.where(sigma < 0.5,
-                                     torch.expm1(sigma),
-                                     sigma.exp() - 1).log().to(logits.dtype)
-            esigm1_log = esigm1_log[:, None, None, None]  # broadcast
-            # Subtract off log( number_of_classes - 1 ) as in the original code
-            logits = logits - esigm1_log - np.log(logits.shape[1] - 1)
+            # Typically used if we do 'absorb' logic
+            assert self.absorb, "scale_by_sigma set but 'absorb' not configured in config."
+            # Mirror original approach
+            esigm1_log = torch.where(
+                sigma < 0.5,
+                torch.expm1(sigma),
+                sigma.exp() - 1
+            ).log().to(logits.dtype)
+            esigm1_log = esigm1_log.view(B, 1, 1, 1)  # broadcast
+            logits = logits - esigm1_log - np.log(self.vocab_size - 1)
 
-        # Optionally zero out the logit for the "same token" as the input (original code did scatter)
-        # That was something like:
+        # If you want to forcibly zero out the logit for the "same token" (like original code's scatter),
+        # you need to do that carefully in 2D. Typically that line was:
         #   x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
-        # You can replicate that if you still want to force the network to "exclude" the input token.
-        # For a 2D grid, you'd flatten the last dimension again or do something else.
+        # but you'd have to adapt it for 2D.
+        # For a binary case (star/no-star), you might not strictly need that.
 
         return logits
-
