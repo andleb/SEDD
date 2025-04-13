@@ -396,6 +396,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
             DDiTBlock(config.model.hidden_size, config.model.n_heads, config.model.cond_dim, dropout=config.model.dropout) for _ in range(config.model.n_blocks)
         ])
 
+        # NOTE: I believe this outputs the log of the score, hence Reals
         self.output_layer = DDitFinalLayer(config.model.hidden_size, vocab_size, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
 
