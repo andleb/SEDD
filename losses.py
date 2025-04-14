@@ -6,7 +6,6 @@ import graph_lib
 from model import utils as mutils
 
 
-# FIXME: adapt to the score wrapper
 def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
     def loss_fn(model, batch, cond=None, t=None, perturbed_batch=None):
         """
@@ -21,7 +20,6 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
         # NOTE: this is a 1d vector - each batch item gets a different t / logSNR
         sigma, dsigma = noise(t)
 
-        # FIXME: Unflatten these as score function will handle it
         B, C, H, W = batch.shape
         # TODO: think about how to incorporate channels down the road
         Zs_flat = batch.view(B, C * H * W)
@@ -38,12 +36,11 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
         # adapted to flattened inputs
         log_score = log_score_fn(perturbed_batch, sigma, cond=Xs_flat)
 
-        # NOTE: everything needs to be flattened here
         # B, vocab_size, H, W = log_score.shape
         # => [B, H, W, vocab_size]
         # => [B, H * W, vocab_size]
         # log_score_2d = log_score.permute(0, 2, 3, 1).view(B, H * W, vocab_size)
-        # NOTE: ignore above, already flattened
+        # NOTE: ignore above, already flattened by the modified score wrapper
         loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, Zs_flat)
 
         loss = (dsigma[:, None] * loss).sum(dim=-1)

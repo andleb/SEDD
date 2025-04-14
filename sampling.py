@@ -123,12 +123,10 @@ def get_sampling_fn(config, graph, noise, batch_dims, eps, device):
     return sampling_fn
 
 
-# FIXME: full image dims
 def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps=1e-5, device=torch.device('cpu'), proj_fun=lambda x: x):
     """
     Assuming batch dims to be the image dims if using images/
     """
-
 
     predictor = get_predictor(predictor)(graph, noise)
     projector = proj_fun
@@ -138,10 +136,11 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
 
     @torch.no_grad()
     def pc_sampler(model, cond=None):
-        # NOTE: score expects (x, sigma, cond)
+        # NOTE: we pass everything flattened inside
+        cond = cond.view(B, C*H*W) if cond is not None else None
+
         sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True,
                                                 B=B, C=C, H=H, W=W)
-
         # Now, it's flattened:
         x = graph.sample_limit(B, C*H*W).to(device)
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
@@ -158,6 +157,6 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
             t = timesteps[-1] * torch.ones(x.shape[0], 1, device=device)
             x = denoiser.update_fn(sampling_score_fn, x, t, cond)
 
-        return x
+        return x.view(B, C, H, W)
 
     return pc_sampler
