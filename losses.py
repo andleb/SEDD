@@ -7,7 +7,6 @@ from model import utils as mutils
 
 
 def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
-
     def loss_fn(model, batch, cond=None, t=None, perturbed_batch=None):
         """
         Batch shape: [B, L] int. D given from graph
@@ -24,7 +23,7 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
         # FIXME: this needs to be flattened
         B, C, H, W = batch.shape
         # TODO: think about how to incorporate channels down the road
-        Zs_flat = batch.view(B, C*H*W)
+        Zs_flat = batch.view(B, C * H * W)
         if perturbed_batch is None:
             perturbed_batch = graph.sample_transition(Zs_flat, sigma[:, None])
 
@@ -39,7 +38,9 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
 
         # NOTE: everything needs to be flattened here
         B, vocab_size, H, W = log_score.shape
-        log_score_2d = log_score.permute(0, 2, 3, 1).view(B, H*W, vocab_size)
+        # => [B, H, W, vocab_size]
+        # => [B, H * W, vocab_size]
+        log_score_2d = log_score.permute(0, 2, 3, 1).view(B, H * W, vocab_size)
         loss = graph.score_entropy(log_score_2d, sigma[:, None], perturbed_batch, Zs_flat)
 
         loss = (dsigma[:, None] * loss).sum(dim=-1)
@@ -51,11 +52,13 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
 
 def get_optimizer(config, params):
     if config.optim.optimizer == 'Adam':
-        optimizer = optim.Adam(params, lr=config.optim.lr, betas=(config.optim.beta1, config.optim.beta2), eps=config.optim.eps,
+        optimizer = optim.Adam(params, lr=config.optim.lr, betas=(config.optim.beta1, config.optim.beta2),
+                               eps=config.optim.eps,
                                weight_decay=config.optim.weight_decay)
     elif config.optim.optimizer == 'AdamW':
-        optimizer = optim.AdamW(params, lr=config.optim.lr, betas=(config.optim.beta1, config.optim.beta2), eps=config.optim.eps,
-                               weight_decay=config.optim.weight_decay)
+        optimizer = optim.AdamW(params, lr=config.optim.lr, betas=(config.optim.beta1, config.optim.beta2),
+                                eps=config.optim.eps,
+                                weight_decay=config.optim.weight_decay)
     else:
         raise NotImplementedError(
             f'Optimizer {config.optim.optimizer} not supported yet!')
@@ -66,10 +69,10 @@ def get_optimizer(config, params):
 def optimization_manager(config):
     """Returns an optimize_fn based on `config`."""
 
-    def optimize_fn(optimizer, 
-                    scaler, 
-                    params, 
-                    step, 
+    def optimize_fn(optimizer,
+                    scaler,
+                    params,
+                    step,
                     lr=config.optim.lr,
                     warmup=config.optim.warmup,
                     grad_clip=config.optim.grad_clip):
@@ -89,14 +92,13 @@ def optimization_manager(config):
 
 
 def get_step_fn(noise, graph, train, optimize_fn, accum):
-
     loss_fn = get_loss_fn(noise, graph, train)
 
     accum_iter = 0
     total_loss = 0
 
     def step_fn(state, batch, cond=None):
-        nonlocal accum_iter 
+        nonlocal accum_iter
         nonlocal total_loss
 
         model = state['model']
@@ -105,7 +107,7 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
             optimizer = state['optimizer']
             scaler = state['scaler']
             loss = loss_fn(model, batch, cond=cond).mean() / accum
-            
+
             scaler.scale(loss).backward()
 
             accum_iter += 1
@@ -117,7 +119,7 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
                 optimize_fn(optimizer, scaler, model.parameters(), step=state['step'])
                 state['ema'].update(model.parameters())
                 optimizer.zero_grad()
-                
+
                 loss = total_loss
                 total_loss = 0
         else:
