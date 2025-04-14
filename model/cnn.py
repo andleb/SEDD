@@ -141,6 +141,8 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
             config = OmegaConf.create(config)
         self.config = config
 
+        self.img_size = config.model.img_size
+
         # 'absorb' or not
         self.absorb = (config.graph.type == "absorb")
         # In a binary case, you might do config.tokens=2,
