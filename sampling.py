@@ -136,8 +136,8 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
 
     @torch.no_grad()
     def pc_sampler(model, cond=None):
-        # NOTE: we pass everything flattened inside
-        cond = cond.view(B, C*H*W) if cond is not None else None
+        # NOTE: we pass everything flattened in the logic
+        cond = cond.view(C*H*W) if cond is not None else None
 
         sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True,
                                                 B=B, C=C, H=H, W=W)
