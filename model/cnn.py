@@ -181,7 +181,7 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
         # Final 1×1 conv to produce per-pixel logits => shape [B, vocab_size, H, W]
         self.final_conv = nn.Conv2d(self.num_cnn_channels, vocab_size, kernel_size=1)
 
-    def forward(self, z_img, sigma, x_img):
+    def forward(self, z_img, sigma, x_img=None):
         """
         :param z_img: [B, 1, H, W], the discrete star map (0 or 1)
         :param sigma: [B,], diffusion timesteps
@@ -191,7 +191,11 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
 
         B, _, H, W = z_img.shape
         # Concatenate Z and X along channel dimension => shape [B, 2, H, W]
-        combined = torch.cat([z_img, x_img], dim=1)
+        # NOTE: use self-conditioning for conditional nets when conditional is not provided
+        if x_img is None:
+            combined = torch.cat([z_img, z_img], dim=1)
+        else:
+            combined = torch.cat([z_img, x_img], dim=1)
 
         # Map to CNN channels
         h = self.prep_conv(combined)  # (B, num_cnn_channels, H, W)
