@@ -62,7 +62,6 @@ class EulerPredictor(Predictor):
     def update_fn(self, score_fn, x, t, cond, step_size):
         sigma, dsigma = self.noise(t)
 
-        # TODO: pass unflattened x, cond here
         score = score_fn(x, sigma, cond)
 
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
@@ -83,7 +82,6 @@ class AnalyticPredictor(Predictor):
         next_sigma = self.noise(t - step_size)[0]
         dsigma = curr_sigma - next_sigma
 
-        # TODO: pass unflattened x, cond here
         score = score_fn(x, curr_sigma, cond)
 
         stag_score = self.graph.staggered_score(score, dsigma)
@@ -99,7 +97,6 @@ class Denoiser:
     def update_fn(self, score_fn, x, t, cond=None):
         sigma = self.noise(t)[0]
 
-        # TODO: pass unflattened x, cond here
         score = score_fn(x, sigma, cond)
         stag_score = self.graph.staggered_score(score, sigma)
         probs = stag_score * self.graph.transp_transition(x, sigma)
@@ -142,7 +139,6 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
         for i in range(steps):
             t = timesteps[i] * torch.ones(x.shape[0], 1, device=device)
             x = projector(x)
-            # FIXME: uses the score
             x = predictor.update_fn(sampling_score_fn, x, t, cond, dt)
             
 
@@ -150,7 +146,6 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
             # denoising step
             x = projector(x)
             t = timesteps[-1] * torch.ones(x.shape[0], 1, device=device)
-            # FIXME: uses the score
             x = denoiser.update_fn(sampling_score_fn, x, t, cond)
             
         return x

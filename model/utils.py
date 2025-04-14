@@ -36,24 +36,23 @@ def get_model_fn(model, train=False):
     return model_fn
 
 
-# TODO: implement unflattening wrapper
-def get_score_fn(model, train=False, sampling=False, *args, **kwargs):
-    if sampling:
-        assert not train, "Must sample in eval mode"
-    model_fn = get_model_fn(model, train=train)
-
-    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-        def score_fn(x, sigma, cond):
-            sigma = sigma.reshape(-1)
-            score = model_fn(x, sigma, cond)
-            
-            if sampling:
-                # when sampling return true score (not log used for training)
-                return score.exp()
-                
-            return score
-
-    return score_fn
+# # def get_score_fn(model, train=False, sampling=False, *args, **kwargs):
+#     if sampling:
+#         assert not train, "Must sample in eval mode"
+#     model_fn = get_model_fn(model, train=train)
+#
+#     with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+#         def score_fn(x, sigma, cond):
+#             sigma = sigma.reshape(-1)
+#             score = model_fn(x, sigma, cond)
+#
+#             if sampling:
+#                 # when sampling return true score (not log used for training)
+#                 return score.exp()
+#
+#             return score
+#
+#     return score_fn
 
 
 
@@ -68,33 +67,42 @@ def get_score_fn(model, train=False, sampling=False, B, C, H, W, *args, **kwargs
     L = C * H * W
     if sampling:
         assert not train, "Must sample in eval mode"
+
     model_fn = get_model_fn(model, train=train)
 
-    def score_fn(x, sigma, cond=None):
+    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        def score_fn(x, sigma, cond=None):
 
-        # x is [B, L] in discrete form
-        B_ = x.shape[0]
-        assert B_ == B, f"Expected batch size {B} got {B_}"
-        assert x.shape[1] == L, f"Expected length {L} got {x.shape[1]}"
+            sigma = sigma.reshape(-1)
 
-        # 1) Unflatten x -> [B, C, H, W]
-        x_img = x.view(B_, C, H, W)
+            # x is [B, L] in discrete form
+            B_ = x.shape[0]
+            assert B_ == B, f"Expected batch size {B} got {B_}"
+            assert x.shape[1] == L, f"Expected length {L} got {x.shape[1]}"
 
-        # 2) If cond is also discrete 2D, unflatten it, or if it's an image
-        #    shape [B, cond_channels, H, W], do similarly.
-        #    If cond is already [B, channels, H, W], just pass it through.
-        #    e.g.:
-        if cond is not None and cond.dim() == 2:
-            # example: cond is [B, H*W], single channel
-            cond = cond.view(B_, 1, H, W)
+            # 1) Unflatten x -> [B, C, H, W]
+            x_img = x.view(B_, C, H, W)
 
-        # 3) Call the CNN model => [B, vocab_size, H, W]
-        logits_4d = model(x_img, sigma, cond)
+            # 2) If cond is also discrete 2D, unflatten it, or if it's an image
+            #    shape [B, cond_channels, H, W], do similarly.
+            #    If cond is already [B, channels, H, W], just pass it through.
+            #    e.g.:
+            if cond is not None and cond.dim() == 2:
+                # example: cond is [B, H*W], single channel
+                cond_img = cond.view(B_, C, H, W)
+                # 3) Call the CNN model => [B, vocab_size, H, W]
+                logits_4d = model_fn(x_img, sigma, cond_img)
+            else:
+                logits_4d = model_fn(x_img, sigma, cond)
 
-        # 4) Flatten => [B, L, vocab_size]
-        vocab_size = logits_4d.shape[1]
-        logits_2d = logits_4d.permute(0, 2, 3, 1).reshape(B_, L, vocab_size)
+            # 4) Flatten => [B, L, vocab_size]
+            vocab_size = logits_4d.shape[1]
+            logits_2d = logits_4d.permute(0, 2, 3, 1).reshape(B_, L, vocab_size)
 
-        return logits_2d  # the log-scores
+            if sampling:
+                # when sampling return true score (not log used for training)
+                return logits_2d.exp()
+
+            return logits_2d  # the log-scores
 
     return score_fn
