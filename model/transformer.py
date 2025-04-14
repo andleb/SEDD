@@ -387,7 +387,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
 
         # NOTE: custom CNN embedder
-        self.cond_embed = CNNXEmbedder(n_filters=config.model.n_filters, out_dim=config.model.cond_dim, img_size=config.model.img_size, n_layers=config.model.n_cnn_layers)
+        self.cond_embed = CNNXEmbedder(n_filters=config.model.n_filters, out_dim=config.model.cond_dim, img_size=config.img_size, n_layers=config.model.n_cnn_layers)
 
         #LabelEmbedderDiT(config.tokens, config.model.hidden_size, config.model.cond_dropout)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
