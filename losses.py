@@ -6,6 +6,7 @@ import graph_lib
 from model import utils as mutils
 
 
+# FIXME: adapt to the score wrapper
 def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
     def loss_fn(model, batch, cond=None, t=None, perturbed_batch=None):
         """
@@ -30,7 +31,8 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
         # Now, we have to pass to the model which expects images
         perturbed_batch_2d = perturbed_batch.view(B, C, H, W)
 
-        log_score_fn = mutils.get_score_fn(model, train=train, sampling=False)
+        log_score_fn = mutils.get_score_fn(model, train=train, sampling=False,
+                                           B=B, C=C, H=H, W=W)
         # NOTE: returns the model output
         # both perturbed batch and cond are [B, C, H, W]
         # Outputs per-pixel logits of shape (B, vocab_size, H, W)

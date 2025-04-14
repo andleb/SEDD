@@ -37,7 +37,7 @@ def get_model_fn(model, train=False):
 
 
 # TODO: implement unflattening wrapper
-def get_score_fn(model, train=False, sampling=False):
+def get_score_fn(model, train=False, sampling=False, *args, **kwargs):
     if sampling:
         assert not train, "Must sample in eval mode"
     model_fn = get_model_fn(model, train=train)
@@ -57,7 +57,7 @@ def get_score_fn(model, train=False, sampling=False):
 
 
 
-def get_score_fn(model, train=False, sampling=False, B, C, H, W):
+def get_score_fn(model, train=False, sampling=False, B, C, H, W, *args, **kwargs):
     """
     Returns a function that:
       1) Unflattens x from [B, L] -> [B, C, H, W]
@@ -66,11 +66,11 @@ def get_score_fn(model, train=False, sampling=False, B, C, H, W):
       4) Flattens the output -> [B, L, vocab]
     """
     L = C * H * W
+    if sampling:
+        assert not train, "Must sample in eval mode"
+    model_fn = get_model_fn(model, train=train)
 
     def score_fn(x, sigma, cond=None):
-        if sampling:
-            assert not train, "Must sample in eval mode"
-        model_fn = get_model_fn(model, train=train)
 
         # x is [B, L] in discrete form
         B_ = x.shape[0]
