@@ -56,7 +56,7 @@ def get_model_fn(model, train=False):
 
 
 
-def get_score_fn(model, train=False, sampling=False, B, C, H, W, *args, **kwargs):
+def get_score_fn(model, train=False, sampling=False, B=1, C=1, H=80, W=80, **kwargs):
     """
     Returns a function that:
       1) Unflattens x from [B, L] -> [B, C, H, W]
