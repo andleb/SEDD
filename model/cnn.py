@@ -193,7 +193,7 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
         # Concatenate Z and X along channel dimension => shape [B, 2, H, W]
         # NOTE: use self-conditioning for conditional nets when conditional is not provided
         if x_img is None:
-            combined = torch.cat([z_img, z_img], dim=1)
+            combined = torch.cat([z_img, z_img.to(torch.float32)], dim=1)
         else:
             combined = torch.cat([z_img, x_img], dim=1)
 
