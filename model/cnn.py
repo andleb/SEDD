@@ -153,7 +153,7 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
         self.sigma_map = TimestepEmbedder(self.time_emb_dim)
 
         # If the code requires scaling by sigma at the end
-        self.scale_by_sigma = config.model.scale_by_sigma
+        self.scale_by_sigma = config.model.scale_by_sigma if self.absorb else False
 
         # For CNN
         self.num_cnn_channels = config.model.cnn_channels  # e.g. 64
