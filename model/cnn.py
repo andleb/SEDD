@@ -202,7 +202,8 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
             h = block(h, t_emb)
 
         # Final projection
-        logits = self.final_conv(h)  # (B, vocab_size, H, W)
+        # shape: (B, vocab_size, H, W)
+        logits = self.final_conv(h)
 
         # Optionally scale by sigma (from original code)
         if self.scale_by_sigma:

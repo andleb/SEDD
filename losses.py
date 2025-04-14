@@ -20,15 +20,27 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
                 t = (1 - sampling_eps) * torch.rand(batch.shape[0], device=batch.device) + sampling_eps
         # NOTE: this is a 1d vector - each batch item gets a different t / logSNR
         sigma, dsigma = noise(t)
-        
+
+        # FIXME: this needs to be flattened
+        B, C, H, W = batch.shape
+        # TODO: think about how to incorporate channels down the road
+        Zs_flat = batch.view(B, C*H*W)
         if perturbed_batch is None:
-            perturbed_batch = graph.sample_transition(batch, sigma[:, None])
+            perturbed_batch = graph.sample_transition(Zs_flat, sigma[:, None])
+
+        # Now, we have to pass to the model which expects images
+        perturbed_batch_2d = perturbed_batch.view(B, C, H, W)
 
         log_score_fn = mutils.get_score_fn(model, train=train, sampling=False)
         # NOTE: returns the model output
-        log_score = log_score_fn(perturbed_batch, sigma, cond=cond)
+        # both perturbed batch and cond are [B, C, H, W]
+        # Outputs per-pixel logits of shape (B, vocab_size, H, W)
+        log_score = log_score_fn(perturbed_batch_2d, sigma, cond=cond)
 
-        loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, batch)
+        # NOTE: everything needs to be flattened here
+        B, vocab_size, H, W = log_score.shape
+        log_score_2d = log_score.permute(0, 2, 3, 1).view(B, H*W, vocab_size)
+        loss = graph.score_entropy(log_score_2d, sigma[:, None], perturbed_batch, Zs_flat)
 
         loss = (dsigma[:, None] * loss).sum(dim=-1)
 
