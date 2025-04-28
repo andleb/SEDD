@@ -244,7 +244,7 @@ class Absorbing(Graph):
         """
         Samples the limiting/stationary distribution.
         """
-        # NOTE: this is a uniform distribution over all but the absorbing state
+        # NOTE: this is the masked state
         #return F.one_hot((self.dim - 1) * torch.ones_like(i), num_classes=self.dim)
 
         return (self.dim - 1) * torch.ones(*batch_dims, dtype=torch.int64)
