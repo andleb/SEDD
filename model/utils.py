@@ -70,7 +70,7 @@ def get_score_fn(model, train=False, sampling=False, B=1, C=1, H=80, W=80, **kwa
 
     model_fn = get_model_fn(model, train=train)
 
-    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    with torch.cuda.amp.autocast(dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16):
         def score_fn(x, sigma, cond=None):
 
             sigma = sigma.reshape(-1)
