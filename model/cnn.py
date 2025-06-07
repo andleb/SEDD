@@ -145,8 +145,6 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
 
         # 'absorb' or not
         self.absorb = (config.graph.type == "absorb")
-        # In a binary case, you might do config.tokens=2,
-        # plus 1 if 'absorb' is used.
         vocab_size = config.tokens + (1 if self.absorb else 0)
         self.vocab_size = vocab_size
 
@@ -163,7 +161,7 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
         dropout = config.model.dropout
 
         # We'll combine Z and X by concatenating channels => 2 input channels
-        in_channels = config.model.in_channels  # e.g. 2
+        in_channels = config.model.in_channels
 
         # "Prep" 1×1 conv: (2 -> num_cnn_channels)
         self.prep_conv = nn.Conv2d(in_channels, self.num_cnn_channels, kernel_size=1)
@@ -198,10 +196,12 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
             combined = torch.cat([z_img, x_img], dim=1)
 
         # Map to CNN channels
-        h = self.prep_conv(combined)  # (B, num_cnn_channels, H, W)
+        # (B, num_cnn_channels, H, W)
+        h = self.prep_conv(combined)
 
         # Get the time embedding
-        t_emb = self.sigma_map(sigma)  # (B, time_emb_dim)
+        # (B, time_emb_dim)
+        t_emb = self.sigma_map(sigma)
 
         # Pass through CNN residual blocks
         for block in self.cnn_blocks:
@@ -225,10 +225,9 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
             logits = logits - esigm1_log - np.log(self.vocab_size - 1)
 
         # TODO:
-        # If you want to forcibly zero out the logit for the "same token" (like original code's scatter),
-        # you need to do that carefully in 2D. Typically that line was:
+        # If you want to forcibly zero out the logit for the "same token" you need to do that carefully in 2D.
+        # Previously that line was:
         #   x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
-        # but you'd have to adapt it for 2D.
-        # For a binary case (star/no-star), you might not strictly need that.
+        ## Need to adapt to 2D!
 
         return logits
