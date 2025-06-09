@@ -7,6 +7,7 @@ from model import utils as mutils
 
 
 def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
+    # NOTE: seems like  `perturbed_batch` would be used for likelihood eval?
     def loss_fn(model, batch, cond=None, t=None, perturbed_batch=None):
         """
         Batch shape: [B, L] int. D given from graph

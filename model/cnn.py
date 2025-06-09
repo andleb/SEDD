@@ -224,10 +224,21 @@ class SEDD_CNN(nn.Module, PyTorchModelHubMixin):
             esigm1_log = esigm1_log.view(B, 1, 1, 1)  # broadcast
             logits = logits - esigm1_log - np.log(self.vocab_size - 1)
 
-        # TODO:
         # If you want to forcibly zero out the logit for the "same token" you need to do that carefully in 2D.
         # Previously that line was:
-        #   x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
+            # overwrite self in the last dimension at indices[..., None] with zeros
+            #   x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
         ## Need to adapt to 2D!
+
+        # Shape: [B, vocab_size, H, W]
+        # Flattened in https://github.com/andleb/SEDD/blob/cd52b2d5244e71b52c7617c016744f2a8efcbe0b/model/utils.py#L100
+        indices_2d = z_img.long().squeeze(1)          # -> [B, H, W]
+
+        logits = torch.scatter(
+            logits,
+            dim=1,                                    # vocab dimension
+            index=indices_2d.unsqueeze(1),            # [B, 1, H, W]
+            src=torch.zeros_like(logits[:, :1, :, :]) # zeros, broadcast
+        )
 
         return logits

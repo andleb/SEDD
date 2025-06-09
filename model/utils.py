@@ -103,6 +103,7 @@ def get_score_fn(model, train=False, sampling=False, B=1, C=1, H=80, W=80, **kwa
                 # when sampling return true score (not log used for training)
                 return logits_2d.exp()
 
-            return logits_2d  # the log-scores
+            # the log-scores
+            return logits_2d
 
     return score_fn
