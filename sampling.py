@@ -167,7 +167,7 @@ class PCSampler:
     """
     Let's make this a class os the attributes can be adjusted.
     """
-    def __init__(self, graph, noise, batch_dims, predictor, steps, denoise=True, eps=1e-5,
+    def __init__(self, graph, noise, batch_dims, sample_batch, predictor, steps, denoise=True, eps=1e-5,
                  device=torch.device('cpu'),
                  proj_fun=lambda x: x):
 
@@ -184,7 +184,11 @@ class PCSampler:
         self.device = device
         self.proj_fun = proj_fun
 
-        self.B, self.C, self.H, self.W = batch_dims
+        self.sample_batch = sample_batch
+        self.B, self.C, self.H, self.W = (batch_dims[0] // self.sample_batch,
+                                          batch_dims[1], batch_dims[2], batch_dims[3])
+
+
 
     @torch.no_grad()
     def __call__(self, model, cond=None):
