@@ -160,3 +160,52 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
         return x.view(B, C, H, W)
 
     return pc_sampler
+
+
+
+class PCSampler:
+    """
+    Let's make this a class os the attributes can be adjusted.
+    """
+    def __init__(self, graph, noise, batch_dims, predictor, steps, denoise=True, eps=1e-5,
+                 device=torch.device('cpu'),
+                 proj_fun=lambda x: x):
+
+        self.graph = graph
+        self.noise = noise
+
+        self.predictor = get_predictor(predictor)(graph, noise)
+        self.denoiser = Denoiser(self.graph, self.noise)
+        self.projector = proj_fun
+
+        self.steps = steps
+        self.denoise = denoise
+        self.eps = eps
+        self.device = device
+        self.proj_fun = proj_fun
+
+        self.B, self.C, self.H, self.W = batch_dims
+
+    @torch.no_grad()
+    def __call__(self, model, cond=None):
+
+        sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True,
+                                                B=self.B, C=self.C, H=self.H,
+                                                W=self.W)
+        # Now, it's flattened:
+        x = self.graph.sample_limit(self.B, self.C*self.H*self.W).to(self.device)
+        timesteps = torch.linspace(1, self.eps, self.steps + 1, device=self.device)
+        dt = (1 - self.eps) / self.steps
+
+        for i in range(self.steps):
+            t = timesteps[i] * torch.ones(x.shape[0], 1, device=self.device)
+            x = self.projector(x)
+            x = self.predictor.update_fn(sampling_score_fn, x, t, cond, dt)
+
+        if self.denoise:
+            # denoising step
+            x = self.projector(x)
+            t = timesteps[-1] * torch.ones(x.shape[0], 1, device=self.device)
+            x = self.denoiser.update_fn(sampling_score_fn, x, t, cond)
+
+        return x.view(self.B, self.C, self.H, self.W)
