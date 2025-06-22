@@ -10,9 +10,9 @@ from omegaconf import OmegaConf
 
 from . import rotary
 from .fused_add_dropout_scale import (
-    bias_dropout_add_scale_fused_train, 
-    bias_dropout_add_scale_fused_inference, 
-    get_bias_dropout_add_scale, 
+    bias_dropout_add_scale_fused_train,
+    bias_dropout_add_scale_fused_inference,
+    get_bias_dropout_add_scale,
     modulate_fused,
 )
 
@@ -193,7 +193,7 @@ class DDiTBlock(nn.Module):
         # if self.is_on_cuda:
             # from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
             # from flash_attn.ops.fused_dense import FusedMLP, FusedDense
-            
+
         # NOTE: Flow-matching torch workaround: src/flow_matching/examples/text/model/transformer.py:133
         self.dim = dim
         self.head_dim = self.dim // self.n_heads
@@ -215,7 +215,7 @@ class DDiTBlock(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
 
         self.dropout = dropout
-        
+
         # TODO: replace with cross-attention
         # NOTE: this is cond_dim X 6 hidden_dim, so huge!
         self.adaLN_modulation = nn.Linear(cond_dim, 6 * dim, bias=True)
@@ -333,7 +333,7 @@ class DDiTBlock(nn.Module):
 class EmbeddingLayer(nn.Module):
     def __init__(self, dim, vocab_dim):
         """
-        Mode arg: 0 -> use a learned layer, 1 -> use eigenvectors, 
+        Mode arg: 0 -> use a learned layer, 1 -> use eigenvectors,
         2-> add in eigenvectors, 3 -> use pretrained embedding matrix
         """
         super().__init__()
@@ -400,7 +400,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.output_layer = DDitFinalLayer(config.model.hidden_size, vocab_size, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
 
-    
+
     def _get_bias_dropout_scale(self):
         return (
             bias_dropout_add_scale_fused_train
@@ -434,7 +434,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
             assert self.absorb, "Haven't configured this to work."
             esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
             x = x - esigm1_log - np.log(x.shape[-1] - 1)# this will be approximately averaged at 0
-            
+
         x = torch.scatter(x, -1, indices[..., None].long(), torch.zeros_like(x[..., :1]))
 
         return x
