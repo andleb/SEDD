@@ -9,7 +9,7 @@ The upstream code targets language modeling: one-dimensional token sequences, an
 flash-attention kernels. This repository adapts it to **discrete label maps on a pixel grid, generated conditionally on
 an observed image**.
 
-Exploratory research work from 2025. The training and evaluation scripts are not provided.
+Research work from 2025. The training and evaluation scripts are not provided.
 
 ## What was changed
 
